@@ -1,6 +1,6 @@
 #define NO_INPUT_INSTRUCTION ((unsigned)-1)
 
-typedef struct I {  // data structure of a single instruction
+typedef struct I { // data structure of a single instruction
   int source1;     // identifies 1st instruction providing input data
   int source2;     // identifies 2nd instr. ..
   int source3;     // identifies 3rd instr. ..
@@ -12,6 +12,7 @@ typedef struct THR {
   int          PC;            // Program Counter: points to current instruction
   int          N_Instr;       // Number of instructions in program
   int          ICount;        // Counts executed instructions in this thread
+  char        *name;          // Thread identifier
   Instruction *Program;       // Actual program: instruction sequence
   int         *whenFinished;  // cycle when each instruction finishes
 } Thread;
