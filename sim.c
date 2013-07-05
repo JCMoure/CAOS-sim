@@ -52,19 +52,33 @@ void output ( Processor *P, Thread *T ) {
   printf("%s:%d.%s ", T->name, T->PC, P->Classes[classID].name);
 } 
 
+int Thread_getPC ( Thread *T) {
+  return T->PC;
+}
 
-void next_instruction ( Thread *T ) {  
-   int PC = T->PC;
-   int opID = T->Program[ PC ].operationID;
+int Thread_getOpID ( Thread *T, int PC)
+{
+  return T->Program[ PC ].operationID;
+}
+
+int Thread_getClassID ( Thread *T, int PC)
+{
+  return T->Program[ PC ].classID;
+}
+
+int Thread_getNext (Thread *T, int PC) {
    PC++;
    if (PC == T->N_Instr ) PC= 0;  // assume last instruction is a backward branch
-   T->PC = PC; // advance to next instruction
+   return PC;
+}
+
+void Thread_next ( Thread *T ) {  
+   T->PC = Thread_getNext ( T, T->PC);
    T->ICount++;
 }
 
-int instruction_latency ( Thread *T, Processor *P ) {
-  int opID= T->Program [ T->PC ].operationID;
-  return P->Ops[opID].latency;
+int Processor_getLatency (Processor *P, int OpID) {
+  return P->Ops[OpID].latency;
 }
 
 
@@ -79,7 +93,7 @@ int check_dependences ( Thread *T, int currentCycle ) {
 }
 
 int check_resources ( Thread *T, Processor *P ) {
-   int classID    = T->Program [ T->PC ].classID;
+   int classID = T->Program [ T->PC ].classID;
    return P->Classes[classID].available;
 }
 
@@ -104,9 +118,9 @@ void sim_SEQUENTIAL (Processor *P, Thread *T, int CycleCount) {
   for (; CYCLE < CycleCount; CYCLE++) { 
     printf("%3d  ", CYCLE);
     if (WAIT_CYCLE == CYCLE) {
-      WAIT_CYCLE += instruction_latency ( T, P );
+      WAIT_CYCLE += Processor_getLatency ( P, Thread_getOpID( T, Thread_getPC(T)) );
       output ( P, T );
-      next_instruction (T);
+      Thread_next (T);
     } else {
       output (0, 0);
     }
@@ -121,9 +135,9 @@ void sim_PIPE1 (Processor *P, Thread *T, int CycleCount) {
   for (; CYCLE < CycleCount; CYCLE++) { 
     printf("%3d  ", CYCLE);
     if (check_dependences (T, CYCLE)) {
-      T->whenFinished[T->PC] = CYCLE + instruction_latency ( T, P );
+      T->whenFinished[T->PC] = CYCLE + Processor_getLatency ( P, Thread_getOpID( T, Thread_getPC(T)) );
       output (P, T);
-      next_instruction (T);
+      Thread_next (T);
     } else {
       output (0, 0);
     }
@@ -142,7 +156,7 @@ void sim_THROUGHPUT (Processor *P, Thread *T, int CycleCount) {
       if ( check_resources ( T, P )) {
         consume_resources ( T, P );;
         output (P, T);
-        next_instruction (T);
+        Thread_next (T);
       } else
         output (0, 0);
       P->PIPE_avail--;
@@ -161,10 +175,10 @@ void sim_PIPELINE (Processor *P, Thread *T, int CycleCount) {
     reset_throughput( P );
     while (P->PIPE_avail) {
       if ( check_resources ( T, P ) && check_dependences (T, CYCLE)) {
-        T->whenFinished[T->PC] = CYCLE + instruction_latency ( T, P );
+        T->whenFinished[T->PC] = CYCLE + Processor_getLatency ( P, Thread_getOpID( T, Thread_getPC(T)) );
         consume_resources ( T, P );;
         output ( P, T );
-        next_instruction (T);
+        Thread_next (T);
       } else
         output (0, 0);
       P->PIPE_avail--;
@@ -188,11 +202,12 @@ void sim_PIPELINE_MT2 (Processor *P, Thread *T0, Thread *T1, int CycleCount) {
     NO_ISSUE = 0; // init exit condition
     while (P->PIPE_avail && NO_ISSUE < 2) {
       if ( check_resources ( T, P ) && check_dependences (T, CYCLE)) {
-        T->whenFinished[T->PC] = CYCLE + instruction_latency ( T, P );
+        T->whenFinished[T->PC] = CYCLE + Processor_getLatency ( P, Thread_getOpID( T, Thread_getPC(T)) );
         consume_resources ( T, P );;
         output ( P, T );
-        next_instruction (T);
+        Thread_next (T);
         P->PIPE_avail--;
+        NO_ISSUE = 0; // init exit condition
       } else
         NO_ISSUE++;   // avoid deadlock situation
       if (T==T0) T=T1;   // switch threads
@@ -227,11 +242,12 @@ void sim_PIPELINE_MT4 (Processor *P, Thread *T0, Thread *T1, Thread *T2, Thread 
     NO_ISSUE = 0; // init exit condition
     while (P->PIPE_avail && NO_ISSUE < 4) {
       if ( check_resources ( T, P ) && check_dependences (T, CYCLE)) {
-        T->whenFinished[T->PC] = CYCLE + instruction_latency ( T, P );
+        T->whenFinished[T->PC] = CYCLE + Processor_getLatency ( P, Thread_getOpID( T, Thread_getPC(T)) );
         consume_resources ( T, P );;
         output ( P, T );
-        next_instruction (T);
+        Thread_next (T);
         P->PIPE_avail--;
+        NO_ISSUE = 0; // init exit condition
       } else
         NO_ISSUE++;   // avoid deadilock situation
       turn++; if (turn>3) turn=0;
