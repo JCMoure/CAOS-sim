@@ -22,14 +22,14 @@ Operation POps[]=
 Processor Proc = { 3 /* PIPE_Width */, 2, 0 /* CCount */, 4, PClasses, 9, POps };
 
 Instruction Program[]= 
-  { {5,-1,-1, 5, 3}, // LOAD  (depends on IADD)
-    {0,-1,-1, 4, 2}, // FMUL  (depends on LOAD)
-    {5,-1,-1, 5, 3}, // LOAD  (depends on IADD)
-    {1, 2,-1, 3, 2}, // FADD  (depends on FMUL & LOAD)
-    {3, 5,-1, 6, 3}, // STORE (depends on FADD)
-    {5,-1,-1, 1, 1}, // IADD  (depends on itself)
-    {5,-1,-1, 2, 1}, // ICMP  (depends on IADD)
-    {6,-1,-1, 0, 0}, // BRN   (depends on ICMP)
+  { {-3, 0, 0, 5, 3}, // LOAD  (depends on IADD)
+    {-1, 0, 0, 4, 2}, // FMUL  (depends on LOAD)
+    {-5, 0, 0, 5, 3}, // LOAD  (depends on IADD)
+    {-2,-1, 0, 3, 2}, // FADD  (depends on FMUL & LOAD)
+    {-1,-7, 0, 6, 3}, // STORE (depends on FADD & IADD)
+    {-8, 0, 0, 1, 1}, // IADD  (depends on itself)
+    {-1, 0, 0, 2, 1}, // ICMP  (depends on IADD)
+    {-1, 0, 0, 0, 0}, // BRN   (depends on ICMP)
   };
 
 int When0[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -97,7 +97,8 @@ ROB * ROB_init   ( Thread *T, int Sz ){
   R->Size= Sz;
   R->whenFinished= malloc (  Sz*sizeof(int) );
   for (i=0; i<Sz; i++)
-    R->whenFinished[i] = (unsigned) -1; // maximum unsigned value 
+    R->whenFinished[i] = 0; // Instructions not in ROB always available 
+  return R;
 }
 
 
@@ -113,8 +114,9 @@ void ROB_insert ( ROB *R, int k ) {
 
 
 void ROB_retire ( ROB *R, int k, unsigned currentCycle ) {
-  while ( k && R->n && R->whenFinished[R->Head] < currentCycle ) {
+  while ( k && R->n && (R->whenFinished[R->Head] <= currentCycle) ) {
     Thread_next ( R->T );  // retire instruction
+    R->whenFinished[R->Head]= 0;
     R->Head = (R->Head == R->Size-1)? 0: R->Head+1; 
     R->n--;
     k--;
@@ -135,20 +137,47 @@ int  ROB_getPC  ( ROB *R, int Pos ) {
   return PC;
 }
 
-int ROB_check ( ROB *R, int PC, unsigned CYCLE) {
-  int s1 = R->T->Program[PC].source1;
-  int s2 = R->T->Program[PC].source2;
-  int s3 = R->T->Program[PC].source3;
 
-  return ((s1 == -1) || (R->whenFinished[s1] <= CYCLE)) &&
-         ((s2 == -1) || (R->whenFinished[s2] <= CYCLE)) &&
-         ((s3 == -1) || (R->whenFinished[s3] <= CYCLE));
+int check_dependences ( Thread *T, int PC, unsigned currentCycle ) {  
+  int s1 = T->Program[PC].source1;
+  int s2 = T->Program[PC].source2;
+  int s3 = T->Program[PC].source3;
+
+  T->whenFinished[PC]= 0;
+
+  s1 = PC+s1; if ( s1 > T->N_Instr ) s1 = s1 - T->N_Instr; 
+  s2 = PC+s2; if ( s2 > T->N_Instr ) s2 = s2 - T->N_Instr; 
+  s3 = PC+s3; if ( s3 > T->N_Instr ) s3 = s3 - T->N_Instr; 
+
+  return ( (T->whenFinished[s1] <= currentCycle) ) &&
+         ( (T->whenFinished[s2] <= currentCycle) ) &&
+         ( (T->whenFinished[s3] <= currentCycle) );
+}
+
+
+int ROB_check ( ROB *R, int Pos, int PC, unsigned CYCLE) {
+  int s1, s2, s3;
+
+  if (R->whenFinished[Pos] != (unsigned) -1)
+    return 0;  // already executed
+
+  s1 = R->T->Program[PC].source1;
+  s2 = R->T->Program[PC].source2;
+  s3 = R->T->Program[PC].source3;
+
+  s1 = PC+s1; if ( s1 > R->Size ) s1 = s1 - R->Size; 
+  s2 = PC+s2; if ( s2 > R->Size ) s2 = s2 - R->Size; 
+  s3 = PC+s3; if ( s3 > R->Size ) s3 = s3 - R->Size; 
+
+  return ( s1 == Pos || R->whenFinished[s1] <= CYCLE ) &&
+         ( s2 == Pos || R->whenFinished[s2] <= CYCLE ) &&
+         ( s3 == Pos || R->whenFinished[s3] <= CYCLE );
 }
 
 int ROB_getAvail ( ROB *R, int Pos, unsigned CYCLE ) {
   int PC = ROB_getPC ( R, Pos );
 
-  while ( Pos != R->Tail && !ROB_check ( R, PC, CYCLE ) ) {
+  while ( Pos != R->Tail && !ROB_check ( R, Pos, PC, CYCLE ) ) {
     PC = Thread_getNext ( R->T, PC );
     Pos= (Pos == R->Size-1)? 0: Pos+1; 
   }
@@ -162,15 +191,6 @@ int ROB_setFinished ( ROB *R, int Pos, unsigned CYCLE) {
 }
 
 
-int check_dependences ( Thread *T, int PC, unsigned currentCycle ) {  
-  int s1 = T->Program[PC].source1;
-  int s2 = T->Program[PC].source2;
-  int s3 = T->Program[PC].source3;
-
-  return ((s1 == -1) || (T->whenFinished[s1] <= currentCycle)) &&
-         ((s2 == -1) || (T->whenFinished[s2] <= currentCycle)) &&
-         ((s3 == -1) || (T->whenFinished[s3] <= currentCycle));
-}
 
 /////// PROCESSOR //////////////////////////7
 
