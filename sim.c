@@ -43,6 +43,7 @@ Thread Thread2 = { 0 /* PC */, 8 /* N_Instr */, 0 /* ICount */, "T2", Program, W
 Thread Thread3 = { 0 /* PC */, 8 /* N_Instr */, 0 /* ICount */, "T3", Program, When3 };
 
 
+//////////////// THREAD //////////////////7
 
 int Thread_getPC ( Thread *T) {
   return T->PC;
@@ -83,20 +84,85 @@ void Thread_setFinished ( Thread *T, int cycle ) {
    T->whenFinished[T->PC] = cycle;
 }
 
-void output ( Processor *P, Thread *T, int PC ) {
-  if (P == 0) {
-    printf("...... ");
-    return;
-  }
-  int classID  = Thread_getClassID ( T, PC );
-  printf("%s:%d.%s ", T->name, PC, P->Classes[classID].name);
-} 
 
-int Processor_getLatency (Processor *P, int OpID) {
-  return P->Ops[OpID].latency;
+////////////// ROB ///////////////////////////
+
+ROB * ROB_init   ( Thread *T, int Sz ){
+  int i;
+  ROB *R = malloc (sizeof(ROB));
+  R->T=    T;
+  R->Head= 0;
+  R->Tail= 0;
+  R->n   = 0;
+  R->Size= Sz;
+  R->whenFinished= malloc (  Sz*sizeof(int) );
+  for (i=0; i<Sz; i++)
+    R->whenFinished[i] = (unsigned) -1; // maximum unsigned value 
 }
 
-int check_dependences ( Thread *T, int PC, int currentCycle ) {  
+
+void ROB_insert ( ROB *R, int k ) {
+  k= ((R->n+k) > R->Size)? R->Size-R->n: k;
+  R->n += k;
+  while (k) {
+    R->whenFinished[R->Tail]= (unsigned) -1;
+    R->Tail = (R->Tail == R->Size-1)? 0: R->Tail+1; 
+    k--;
+  }
+}
+
+
+void ROB_retire ( ROB *R, int k, unsigned currentCycle ) {
+  while ( k && R->n && R->whenFinished[R->Head] < currentCycle ) {
+    Thread_next ( R->T );  // retire instruction
+    R->Head = (R->Head == R->Size-1)? 0: R->Head+1; 
+    R->n--;
+    k--;
+  }
+}
+
+int  ROB_getPos  ( ROB *R ) {
+  return R->Head;
+}
+
+int  ROB_getPC  ( ROB *R, int Pos ) {
+  int PC = Thread_getPC ( R->T );
+  int Ps = R->Head;
+  while ( Ps != Pos) {
+    PC = Thread_getNext ( R->T, PC );
+    Ps = (Ps == R->Size-1)? 0: Ps+1; 
+  }
+  return PC;
+}
+
+int ROB_check ( ROB *R, int PC, unsigned CYCLE) {
+  int s1 = R->T->Program[PC].source1;
+  int s2 = R->T->Program[PC].source2;
+  int s3 = R->T->Program[PC].source3;
+
+  return ((s1 == -1) || (R->whenFinished[s1] <= CYCLE)) &&
+         ((s2 == -1) || (R->whenFinished[s2] <= CYCLE)) &&
+         ((s3 == -1) || (R->whenFinished[s3] <= CYCLE));
+}
+
+int ROB_getAvail ( ROB *R, int Pos, unsigned CYCLE ) {
+  int PC = ROB_getPC ( R, Pos );
+
+  while ( Pos != R->Tail && !ROB_check ( R, PC, CYCLE ) ) {
+    PC = Thread_getNext ( R->T, PC );
+    Pos= (Pos == R->Size-1)? 0: Pos+1; 
+  }
+  if (Pos == R->Tail)
+    return -1;
+  return Pos;
+}
+
+int ROB_setFinished ( ROB *R, int Pos, unsigned CYCLE) {
+  R->whenFinished[Pos]= CYCLE;
+}
+
+
+int check_dependences ( Thread *T, int PC, unsigned currentCycle ) {  
   int s1 = T->Program[PC].source1;
   int s2 = T->Program[PC].source2;
   int s3 = T->Program[PC].source3;
@@ -106,24 +172,45 @@ int check_dependences ( Thread *T, int PC, int currentCycle ) {
          ((s3 == -1) || (T->whenFinished[s3] <= currentCycle));
 }
 
-int check_resources ( Processor *P, int classID ) {
-   return P->Classes[classID].available;
-}
+/////// PROCESSOR //////////////////////////7
 
-void consume_resources ( Processor *P, int classID ) {
-   assert (P->Classes[classID].available > 0);
-   P->Classes[classID].available--;
-}
-
-void reset_throughput ( Processor *P ) {
+void Processor_reset (Processor *P ) {
   int i;
   P->PIPE_avail = P->PIPE_width;
   for (i=0; i<P->Num_Classes; i++)
     P->Classes[i].available = P->Classes[i].throughput;
 }
 
-void sim_SEQUENTIAL (Processor *P, Thread *T, int CycleCount) {
-  int CYCLE = 0;
+int Processor_getLatency (Processor *P, int OpID) {
+  return P->Ops[OpID].latency;
+}
+
+int Processor_checkResource ( Processor *P, int classID ) {
+   return P->Classes[classID].available;
+}
+
+void Processor_consumeResource ( Processor *P, int classID ) {
+   assert (P->Classes[classID].available > 0);
+   P->Classes[classID].available--;
+}
+
+
+
+///////////// OUTPUT ///////////////////
+void output ( Processor *P, Thread *T, int PC ) {
+  if (P == 0) {
+    printf("...... ");
+    return;
+  }
+  int classID  = Thread_getClassID ( T, PC );
+  printf("%s:%d.%s ", T->name, PC, P->Classes[classID].name);
+} 
+
+
+///////////////////////////////////////////////////////////7
+
+void sim_SEQUENTIAL (Processor *P, Thread *T, unsigned CycleCount) {
+  unsigned CYCLE = 0;
   int WAIT_CYCLE = 0;
 
   for (; CYCLE < CycleCount; CYCLE++) { 
@@ -140,8 +227,12 @@ void sim_SEQUENTIAL (Processor *P, Thread *T, int CycleCount) {
   P->CCount = CYCLE;
 }
 
-void sim_PIPE1 (Processor *P, Thread *T, int CycleCount) {
-  int CYCLE = 0;
+
+
+///////////////////////////////////////////////////////////7
+
+void sim_PIPE1 (Processor *P, Thread *T, unsigned CycleCount) {
+  unsigned CYCLE = 0;
   int PC;
 
   for (; CYCLE < CycleCount; CYCLE++) { 
@@ -159,18 +250,22 @@ void sim_PIPE1 (Processor *P, Thread *T, int CycleCount) {
   P->CCount = CYCLE;
 }
 
-void sim_THROUGHPUT (Processor *P, Thread *T, int CycleCount) {
-  int CYCLE = 0;
+
+
+///////////////////////////////////////////////////////////7
+
+void sim_THROUGHPUT (Processor *P, Thread *T, unsigned CycleCount) {
+  unsigned CYCLE = 0;
   int PC;
 
   for (; CYCLE < CycleCount; CYCLE++) { 
     printf("%3d  ", CYCLE);
-    reset_throughput( P );
+    Processor_reset( P );
     while (P->PIPE_avail) {
       PC = Thread_getPC (T);
       int classID = Thread_getClassID ( T, PC );
-      if ( check_resources ( P, classID )) {
-        consume_resources ( P, classID );;
+      if ( Processor_checkResource ( P, classID )) {
+        Processor_consumeResource ( P, classID );;
         output (P, T, PC);
         Thread_next (T);
       } else
@@ -183,19 +278,22 @@ void sim_THROUGHPUT (Processor *P, Thread *T, int CycleCount) {
 }
 
 
-void sim_PIPELINE (Processor *P, Thread *T, int CycleCount) {
-  int CYCLE = 0;
+
+///////////////////////////////////////////////////////////7
+
+void sim_PIPELINE (Processor *P, Thread *T, unsigned CycleCount) {
+  unsigned CYCLE = 0;
   int PC, classID;
 
   for (; CYCLE < CycleCount; CYCLE++) { 
     printf("%3d  ", CYCLE);
-    reset_throughput( P );
+    Processor_reset( P );
     while (P->PIPE_avail) {
       PC = Thread_getPC (T);
       classID = Thread_getClassID ( T, PC );
-      if ( check_resources ( P, classID ) && check_dependences (T, PC, CYCLE)) {
+      if ( Processor_checkResource ( P, classID ) && check_dependences (T, PC, CYCLE)) {
         Thread_setFinished (T, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC ) ));
-        consume_resources ( P, classID );
+        Processor_consumeResource ( P, classID );
         output ( P, T, PC );
         Thread_next (T);
       } else
@@ -208,23 +306,27 @@ void sim_PIPELINE (Processor *P, Thread *T, int CycleCount) {
 }
 
 
-void sim_PIPELINE_MT2 (Processor *P, Thread *T0, Thread *T1, int CycleCount) {
+
+///////////////////////////////////////////////////////////7
+
+void sim_PIPELINE_MT2 (Processor *P, Thread *T0, Thread *T1, unsigned CycleCount) {
 
   Thread *T;
-  int CYCLE = 0, NO_ISSUE=0;
+  unsigned CYCLE = 0;
+  int  NO_ISSUE=0;
   int PC, classID;
 
   for (; CYCLE < CycleCount; CYCLE++) { 
     printf("%3d  ", CYCLE);
-    reset_throughput( P );
+    Processor_reset( P );
     T = T0;       // thread 0 has priority
     NO_ISSUE = 0; // init exit condition
     while (P->PIPE_avail && NO_ISSUE < 2) {
       PC = Thread_getPC (T);
       classID = Thread_getClassID ( T, PC );
-      if ( check_resources ( P, classID ) && check_dependences (T, PC, CYCLE)) {
+      if ( Processor_checkResource ( P, classID ) && check_dependences (T, PC, CYCLE)) {
         Thread_setFinished (T, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC ) ));
-        consume_resources ( P, classID );
+        Processor_consumeResource ( P, classID );
         output ( P, T, PC );
         Thread_next (T);
         P->PIPE_avail--;
@@ -244,14 +346,18 @@ void sim_PIPELINE_MT2 (Processor *P, Thread *T0, Thread *T1, int CycleCount) {
 }
 
 
-void sim_PIPELINE_MT4 (Processor *P, Thread *T0, Thread *T1, Thread *T2, Thread *T3, int CycleCount) {
+
+///////////////////////////////////////////////////////////7
+
+void sim_PIPELINE_MT4 (Processor *P, Thread *T0, Thread *T1, Thread *T2, Thread *T3, unsigned CycleCount) {
 
   Thread *T;
-  int CYCLE = 0, NO_ISSUE=0, turn=0; // thread 0 starts with priority
+  unsigned CYCLE = 0;
+  int NO_ISSUE=0, turn=0; // thread 0 starts with priority
   int PC, classID;
   for (; CYCLE < CycleCount; CYCLE++) { 
     printf("%3d  ", CYCLE);
-    reset_throughput( P );
+    Processor_reset( P );
     // round-robin priority: do nothing
     // random
     turn = rand()%4;
@@ -265,9 +371,9 @@ void sim_PIPELINE_MT4 (Processor *P, Thread *T0, Thread *T1, Thread *T2, Thread 
     while (P->PIPE_avail && NO_ISSUE < 4) {
       PC = Thread_getPC (T);
       classID = Thread_getClassID ( T, PC );
-      if ( check_resources ( P, classID ) && check_dependences (T, PC, CYCLE)) {
+      if ( Processor_checkResource ( P, classID ) && check_dependences (T, PC, CYCLE)) {
         Thread_setFinished (T, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC ) ));
-        consume_resources ( P, classID );
+        Processor_consumeResource ( P, classID );
         output ( P, T, PC );
         Thread_next (T);
         P->PIPE_avail--;
@@ -292,20 +398,28 @@ void sim_PIPELINE_MT4 (Processor *P, Thread *T0, Thread *T1, Thread *T2, Thread 
 }
 
 
-void sim_PIPE_ROB_1 (Processor *P, Thread *T, int CycleCount) {
-  int CYCLE = 0;
-  int PC;
+///////////////////////////////////////////////////////////7
+
+void sim_PIPE_ROB_1 (Processor *P, Thread *T, unsigned CycleCount) {
+  unsigned CYCLE = 0;
+  int PC, Pos;
+  ROB *R;
+
+  R = ROB_init ( T, 32);  // ROB size is 32
 
   for (; CYCLE < CycleCount; CYCLE++) { 
     printf("%3d  ", CYCLE);
-    PC = Thread_getPC (T);
-    if (check_dependences (T, PC, CYCLE)) {
-      Thread_setFinished (T, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC )));
-      output (P, T, PC );
-      Thread_next (T);
-    } else {
-      output (0, 0, 0);
+    ROB_retire ( R, 1, CYCLE);  // ROB retire width
+    ROB_insert ( R, 1);         // ROB insert width
+    Pos = ROB_getPos (R);
+    if ( (Pos = ROB_getAvail ( R, Pos, CYCLE )) >= 0 ) {
+      PC = ROB_getPC (R, Pos);
+      output ( P, T, PC );
+      ROB_setFinished ( R, Pos, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC )));
     }
+    else
+      output ( 0, 0, 0 );
+
     printf("\n");
   }
   P->CCount = CYCLE;
@@ -313,7 +427,7 @@ void sim_PIPE_ROB_1 (Processor *P, Thread *T, int CycleCount) {
 
 
 void main (int argc, char **argv) {
-  int Cycles= 100;
+  unsigned Cycles= 100;
   int option= 0;
   int seed = 0;
   if (argc>1) { Cycles= atoll(argv[1]); }
