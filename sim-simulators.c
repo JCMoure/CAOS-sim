@@ -113,7 +113,7 @@ void sim_PIPELINE_MT2 (int argc, char **argv, Processor *P, Thread *T0, Thread *
   unsigned CYCLE = 0;
   int   NO_ISSUE=0, PC, classID, policy=0;
 
-  if (argc>0) { policy  = atoll(argv[0]); }
+  if (argc>3) { policy  = atoll(argv[3]); }
 
   T = Tp = T0;  // Thread 0 starts with priority
 
@@ -177,7 +177,7 @@ void sim_PIPELINE_MT4 (int argc, char **argv, Processor *P, Thread *T0, Thread *
   int PC, classID;
   int seed = 0;
 
-  if (argc>0) { seed  = atoll(argv[0]); }
+  if (argc>3) { seed  = atoll(argv[3]); }
   srand(seed);
   for (; CYCLE < CycleCount; CYCLE++) { 
     printf("%3d  ", CYCLE);
@@ -227,13 +227,13 @@ void sim_PIPELINE_MT4 (int argc, char **argv, Processor *P, Thread *T0, Thread *
 
 ///////////////////////////////////////////////////////////7
 
-void sim_PIPE_ROB_1 (int argc, char **argv, Processor *P, Thread *T, unsigned CycleCount) {
+void sim_PIPE_ROB (int argc, char **argv, Processor *P, Thread *T, unsigned CycleCount) {
   unsigned CYCLE = 0;
-  int PC, Pos, ROB_size=8, ROB_rate=1;
+  int PC, Pos, i, ROB_size=8, ROB_rate=1;
   ROB *R;
   
-  if (argc>0) { ROB_size = atoll(argv[0]); }
-  if (argc>1) { ROB_rate = atoll(argv[1]); }
+  if (argc>3) { ROB_size = atoll(argv[3]); }
+  if (argc>4) { ROB_rate = atoll(argv[4]); }
 
   R = ROB_init ( T, ROB_size);
 
@@ -241,18 +241,22 @@ void sim_PIPE_ROB_1 (int argc, char **argv, Processor *P, Thread *T, unsigned Cy
     printf("%3d  ", CYCLE);
     ROB_retire ( R, ROB_rate, CYCLE);  // ROB retire width
     ROB_insert ( R, ROB_rate);         // ROB insert width
-    Pos = ROB_getPos (R);
-    if ( (Pos = ROB_getAvail ( R, Pos, CYCLE )) >= 0 ) {
-      PC = ROB_getPC (R, Pos);
-      output ( P, T, PC );
-      ROB_setFinished ( R, Pos, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC )));
+    for (i=0; i<ROB_rate; i++) {
+      if ( (Pos = ROB_getAvail ( R, CYCLE )) >= 0 ) {
+        PC = ROB_getPC (R, Pos);
+        output ( P, T, PC );
+        ROB_setFinished ( R, Pos, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC )));
+      }
+      else {
+        output ( 0, 0, 0 );
+      }
     }
-    else
-      output ( 0, 0, 0 );
-
+#ifdef DEBUG
+    ROB_dump ( R );
+#endif
     printf("\n");
   }
   P->CCount = CYCLE;
-  printf("\n\nPROCESSOR: Dynamic Execution Reordering, Simple PIPE, ROB size: %d, Insert/Retire rate: %d\n", 
+  printf("\n\nPROCESSOR: Dynamic Execution Reordering, Full PIPE, ROB size: %d, Issue/Retire rate: %d\n", 
          ROB_size, ROB_rate);
 }

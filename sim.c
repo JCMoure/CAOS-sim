@@ -9,23 +9,19 @@ int Thread_getPC ( Thread *T) {
   return T->PC;
 }
 
-int Thread_getCurrentOpID ( Thread *T)
-{
+int Thread_getCurrentOpID ( Thread *T) {
   return T->Program[ T->PC ].operationID;
 }
 
-int Thread_getCurrentClassID ( Thread *T)
-{
+int Thread_getCurrentClassID ( Thread *T) {
   return T->Program[ T->PC ].classID;
 }
 
-int Thread_getOpID ( Thread *T, int PC)
-{
+int Thread_getOpID ( Thread *T, int PC) {
   return T->Program[ PC ].operationID;
 }
 
-int Thread_getClassID ( Thread *T, int PC)
-{
+int Thread_getClassID ( Thread *T, int PC) {
   return T->Program[ PC ].classID;
 }
 
@@ -36,6 +32,7 @@ int Thread_getNext (Thread *T, int PC) {
 }
 
 void Thread_next ( Thread *T ) {  
+   T->Program[T->PC].count++;
    T->PC = Thread_getNext ( T, T->PC);
    T->ICount++;
 }
@@ -83,10 +80,6 @@ void ROB_retire ( ROB *R, int k, unsigned currentCycle ) {
   }
 }
 
-int  ROB_getPos  ( ROB *R ) {
-  return R->Head;
-}
-
 int  ROB_getPC  ( ROB *R, int Pos ) {
   int PC = Thread_getPC ( R->T );
   int Ps = R->Head;
@@ -115,7 +108,7 @@ int check_dependences ( Thread *T, int PC, unsigned currentCycle ) {
 }
 
 
-int ROB_check ( ROB *R, int Pos, int PC, unsigned CYCLE) {
+int ROB_check ( ROB *R, int Pos, int checked, int PC, unsigned CYCLE) {
   int s1, s2, s3;
 
   if (R->whenFinished[Pos] != (unsigned) -1)
@@ -125,23 +118,30 @@ int ROB_check ( ROB *R, int Pos, int PC, unsigned CYCLE) {
   s2 = R->T->Program[PC].source2;
   s3 = R->T->Program[PC].source3;
 
-  s1 = PC+s1; if ( s1 > R->Size ) s1 = s1 - R->Size; 
-  s2 = PC+s2; if ( s2 > R->Size ) s2 = s2 - R->Size; 
-  s3 = PC+s3; if ( s3 > R->Size ) s3 = s3 - R->Size; 
+  if (checked+s1 < 0) s1 = 0;  // dependent instruction already retired
+  if (checked+s2 < 0) s2 = 0;  // dependent instruction already retired
+  if (checked+s3 < 0) s3 = 0;  // dependent instruction already retired
+  
+  s1 = Pos+s1; if ( s1 < 0 ) s1 = s1 + R->Size; // circular buffer
+  s2 = Pos+s2; if ( s2 < 0 ) s2 = s2 + R->Size; 
+  s3 = Pos+s3; if ( s3 < 0 ) s3 = s3 + R->Size; 
 
   return ( s1 == Pos || R->whenFinished[s1] <= CYCLE ) &&
          ( s2 == Pos || R->whenFinished[s2] <= CYCLE ) &&
          ( s3 == Pos || R->whenFinished[s3] <= CYCLE );
 }
 
-int ROB_getAvail ( ROB *R, int Pos, unsigned CYCLE ) {
-  int PC = ROB_getPC ( R, Pos );
+int ROB_getAvail ( ROB *R, unsigned CYCLE ) {
+  int Pos = R->Head;
+  int PC = Thread_getPC ( R->T );
+  int checked = 0;
 
-  while ( Pos != R->Tail && !ROB_check ( R, Pos, PC, CYCLE ) ) {
+  while ( checked < R->n && !ROB_check ( R, Pos, checked, PC, CYCLE ) ) {
     PC = Thread_getNext ( R->T, PC );
-    Pos= (Pos == R->Size-1)? 0: Pos+1; 
+    Pos= (Pos == R->Size-1)? 0: Pos+1;
+    checked++;
   }
-  if (Pos == R->Tail)
+  if ( checked == R->n)
     return -1;
   return Pos;
 }
@@ -151,6 +151,15 @@ int ROB_setFinished ( ROB *R, int Pos, unsigned CYCLE) {
 }
 
 
+void ROB_dump ( ROB *R ) {
+  int i, p;
+  printf("ROB Head: %d; Tail: %d; N: %d; PC: %d, Wait:[", R->Head, R->Tail, R->n, R->T->PC);
+  for (i=0, p=R->Head; i<R->n; i++) {
+    printf("%d, ", R->whenFinished[p]);
+    p= (p == R->Size-1)? 0: p+1;
+  }
+  printf("]");
+} 
 
 /////// PROCESSOR //////////////////////////7
 
@@ -181,8 +190,9 @@ void output ( Processor *P, Thread *T, int PC ) {
     printf("...... ");
     return;
   }
-  int classID  = Thread_getClassID ( T, PC );
-  printf("%d.%s ", PC, P->Classes[classID].name);
+  int classID= Thread_getClassID ( T, PC );
+  int OpID=    Thread_getOpID    ( T, PC );
+  printf("%d(%d).%s(%s)   ", PC, T->Program[PC].count, P->Classes[classID].name, P->Ops[OpID].name);
 } 
 
 
@@ -192,5 +202,5 @@ void output_thread ( Processor *P, Thread *T, int PC ) {
     return;
   }
   int classID  = Thread_getClassID ( T, PC );
-  printf("%s:%d.%s ", T->name, PC, P->Classes[classID].name);
+  printf("%s:%d.%s   ", T->name, PC, P->Classes[classID].name);
 } 

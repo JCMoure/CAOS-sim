@@ -4,6 +4,7 @@ typedef struct I { // data structure of a single instruction
   int source3;     // identifies 3rd instr. ..
   int operationID; // operation
   int classID;     // operation class
+  int count;       // counts number of executions of instruction
 } Instruction;
 
 typedef struct THR {
@@ -68,7 +69,7 @@ typedef struct RB {  // data structure of a ReOrder Buffer
 ROB *ROB_init   ( Thread *T, int Sz );
 void ROB_insert ( ROB *R, int k ); 
 void ROB_retire ( ROB *R, int k, unsigned currentCycle );
-int  ROB_getPos ( ROB *R );
 int  ROB_getPC  ( ROB *R, int Pos );
-int  ROB_getAvail    ( ROB *R, int Pos, unsigned CYCLE );
+int  ROB_getAvail    ( ROB *R, unsigned CYCLE );
 int  ROB_setFinished ( ROB *R, int Pos, unsigned CYCLE );
+void ROB_dump   ( ROB *R );
