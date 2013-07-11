@@ -29,13 +29,14 @@ void sim_SEQUENTIAL (Processor *P, Thread *T, unsigned CycleCount) {
 
 void sim_PIPE1 (Processor *P, Thread *T, unsigned CycleCount) {
   unsigned CYCLE = 0;
-  int PC;
+  int      PC;
+  PIPE *PP= PIPE_init (T);
 
   for (; CYCLE < CycleCount; CYCLE++) { 
     printf("%3d  ", CYCLE);
     PC = Thread_getPC (T);
-    if (check_dependences (T, PC, CYCLE)) {
-      Thread_setFinished (T, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC )));
+    if (PIPE_check (PP, PC, CYCLE)) {
+      PIPE_setFinished (PP, PC, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC )));
       output (P, T, PC );
       Thread_next (T);
     } else {
@@ -82,6 +83,7 @@ void sim_THROUGHPUT (Processor *P, Thread *T, unsigned CycleCount) {
 void sim_PIPELINE (Processor *P, Thread *T, unsigned CycleCount) {
   unsigned CYCLE = 0;
   int PC, classID;
+  PIPE *PP = PIPE_init (T);
 
   for (; CYCLE < CycleCount; CYCLE++) { 
     printf("%3d  ", CYCLE);
@@ -89,8 +91,8 @@ void sim_PIPELINE (Processor *P, Thread *T, unsigned CycleCount) {
     while (P->PIPE_avail) {
       PC = Thread_getPC (T);
       classID = Thread_getClassID ( T, PC );
-      if ( Processor_checkResource ( P, classID ) && check_dependences (T, PC, CYCLE)) {
-        Thread_setFinished (T, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC ) ));
+      if ( Processor_checkResource ( P, classID ) && PIPE_check (PP, PC, CYCLE)) {
+        PIPE_setFinished (PP, PC, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC ) ));
         Processor_consumeResource ( P, classID );
         output ( P, T, PC );
         Thread_next (T);
@@ -109,44 +111,46 @@ void sim_PIPELINE (Processor *P, Thread *T, unsigned CycleCount) {
 
 void sim_PIPELINE_MT2 (int argc, char **argv, Processor *P, Thread *T0, Thread *T1, unsigned CycleCount) {
 
-  Thread *T, *Tp;
   unsigned CYCLE = 0;
   int   NO_ISSUE=0, PC, classID, policy=0;
+  PIPE *PP0 = PIPE_init (T0);
+  PIPE *PP1 = PIPE_init (T1);
+  PIPE *PP, *PPmain;
 
-  if (argc>3) { policy  = atoll(argv[3]); }
+  if (argc>1) { policy  = atoll(argv[1]); }
 
-  T = Tp = T0;  // Thread 0 starts with priority
+  PP = PPmain = PP0;  // Thread 0 starts with priority
 
   for (; CYCLE < CycleCount; CYCLE++) { 
     printf("%3d  ", CYCLE);
     Processor_reset( P );
     if (policy==1)        // Last thread executing gains priority
-      T = T;  // do not change priority
+      PP = PP;  // do not change priority
     else if (policy==2) // Each cycle priority swaps
     {
-      if (Tp==T0) Tp=T1;   // switch threads
-      else        Tp=T0;
-      T = Tp;
+      if (PPmain==PP0) PPmain=PP1;   // switch threads
+      else             PPmain=PP0;
+      PP = PPmain;
     }
     else    // Thread 0 always has priority
-      T = T0;       // thread 0 has priority
+      PP = PP0;       // thread 0 has priority
 
     NO_ISSUE = 0; // init exit condition
     while (P->PIPE_avail && NO_ISSUE < 2) {
-      PC = Thread_getPC (T);
-      classID = Thread_getClassID ( T, PC );
-      if ( Processor_checkResource ( P, classID ) && check_dependences (T, PC, CYCLE)) {
-        Thread_setFinished (T, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC ) ));
+      PC = Thread_getPC (PP->T);
+      classID = Thread_getClassID ( PP->T, PC );
+      if ( Processor_checkResource ( P, classID ) && PIPE_check (PP, PC, CYCLE)) {
+        PIPE_setFinished (PP, PC, CYCLE + Processor_getLatency ( P, Thread_getOpID( PP->T, PC ) ));
         Processor_consumeResource ( P, classID );
-        output_thread ( P, T, PC );
-        Thread_next (T);
+        output_thread ( P, PP->T, PC );
+        Thread_next (PP->T);
         P->PIPE_avail--;
         NO_ISSUE = 0; // init exit condition
       } else
         NO_ISSUE++;   // avoid deadlock situation
 
-      if (T==T0) T=T1;   // switch threads
-      else       T=T0;
+      if (PP==PP0) PP=PP1;   // switch threads
+      else         PP=PP0;
     }
     while (P->PIPE_avail) {
       output_thread (0, 0, 0);
@@ -171,13 +175,17 @@ void sim_PIPELINE_MT2 (int argc, char **argv, Processor *P, Thread *T0, Thread *
 void sim_PIPELINE_MT4 (int argc, char **argv, Processor *P, Thread *T0, Thread *T1, Thread *T2, Thread *T3, 
                        unsigned CycleCount) 
 {
-  Thread *T;
+  PIPE *PP0 = PIPE_init (T0);
+  PIPE *PP1 = PIPE_init (T1);
+  PIPE *PP2 = PIPE_init (T2);
+  PIPE *PP3 = PIPE_init (T3);
+  PIPE *PP;
   unsigned CYCLE = 0;
   int NO_ISSUE=0, turn=0; // thread 0 starts with priority
   int PC, classID;
   int seed = 0;
 
-  if (argc>3) { seed  = atoll(argv[3]); }
+  if (argc>1) { seed  = atoll(argv[1]); }
   srand(seed);
   for (; CYCLE < CycleCount; CYCLE++) { 
     printf("%3d  ", CYCLE);
@@ -186,20 +194,20 @@ void sim_PIPELINE_MT4 (int argc, char **argv, Processor *P, Thread *T0, Thread *
     // random priority at the beginning, then round-robin
     turn = rand()%4;
     switch (turn) {
-      case 0: T=T0; break;
-      case 1: T=T1; break;
-      case 2: T=T2; break;
-      case 3: T=T3; break;
+      case 0: PP=PP0; break;
+      case 1: PP=PP1; break;
+      case 2: PP=PP2; break;
+      case 3: PP=PP3; break;
     }
     NO_ISSUE = 0; // init exit condition
     while (P->PIPE_avail && NO_ISSUE < 4) {
-      PC = Thread_getPC (T);
-      classID = Thread_getClassID ( T, PC );
-      if ( Processor_checkResource ( P, classID ) && check_dependences (T, PC, CYCLE)) {
-        Thread_setFinished (T, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC ) ));
+      PC = Thread_getPC (PP->T);
+      classID = Thread_getClassID ( PP->T, PC );
+      if ( Processor_checkResource ( P, classID ) && PIPE_check (PP, PC, CYCLE)) {
+        PIPE_setFinished (PP, PC, CYCLE + Processor_getLatency ( P, Thread_getOpID( PP->T, PC ) ));
         Processor_consumeResource ( P, classID );
-        output_thread ( P, T, PC );
-        Thread_next (T);
+        output_thread ( P, PP->T, PC );
+        Thread_next (PP->T);
         P->PIPE_avail--;
         NO_ISSUE = 0; // init exit condition
       } else
@@ -208,10 +216,10 @@ void sim_PIPELINE_MT4 (int argc, char **argv, Processor *P, Thread *T0, Thread *
       // Round-Robin policy for next turns
       turn++; if (turn>3) turn=0;
       switch (turn) {
-        case 0: T=T0; break;
-        case 1: T=T1; break;
-        case 2: T=T2; break;
-        case 3: T=T3; break;
+        case 0: PP=PP0; break;
+        case 1: PP=PP1; break;
+        case 2: PP=PP2; break;
+        case 3: PP=PP3; break;
       }
     }
     while (P->PIPE_avail) {
@@ -232,8 +240,8 @@ void sim_PIPE_ROB (int argc, char **argv, Processor *P, Thread *T, unsigned Cycl
   int PC, Pos, i, ROB_size=8, ROB_rate=1;
   ROB *R;
   
-  if (argc>3) { ROB_size = atoll(argv[3]); }
-  if (argc>4) { ROB_rate = atoll(argv[4]); }
+  if (argc>1) { ROB_size = atoll(argv[1]); }
+  if (argc>2) { ROB_rate = atoll(argv[2]); }
 
   R = ROB_init ( T, ROB_size);
 

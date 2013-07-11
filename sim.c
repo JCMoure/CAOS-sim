@@ -32,15 +32,43 @@ int Thread_getNext (Thread *T, int PC) {
 }
 
 void Thread_next ( Thread *T ) {  
-   T->Program[T->PC].count++;
    T->PC = Thread_getNext ( T, T->PC);
    T->ICount++;
 }
 
-void Thread_setFinished ( Thread *T, int cycle ) {
-   T->whenFinished[T->PC] = cycle;
+////////// PIPE ////////////////////////
+
+PIPE * PIPE_init ( Thread * T) {
+  int i;
+  PIPE *PP = malloc (sizeof(PIPE));
+  PP->T   = T;
+  PP->Sz  = T->N_Instr;
+  PP->whenFinished= malloc (  PP->Sz*sizeof(unsigned) );
+  for (i=0; i<PP->Sz; i++)
+    PP->whenFinished[i] = 0;
+  return PP;
 }
 
+void PIPE_setFinished ( PIPE *PP, int Pos, unsigned cycle ) {
+   PP->whenFinished[Pos] = cycle;
+}
+
+int PIPE_check ( PIPE *PP, int PC, unsigned currentCycle ) {  
+  int s1 = PP->T->Program[PC].source1;
+  int s2 = PP->T->Program[PC].source2;
+  int s3 = PP->T->Program[PC].source3;
+  int N= PP->Sz;
+
+  PP->whenFinished[PC]= 0;
+
+  s1 = PC+s1; if ( s1 > N ) s1 = s1 - N; 
+  s2 = PC+s2; if ( s2 > N ) s2 = s2 - N; 
+  s3 = PC+s3; if ( s3 > N ) s3 = s3 - N; 
+
+  return ( (PP->whenFinished[s1] <= currentCycle) ) &&
+         ( (PP->whenFinished[s2] <= currentCycle) ) &&
+         ( (PP->whenFinished[s3] <= currentCycle) );
+}
 
 ////////////// ROB ///////////////////////////
 
@@ -52,7 +80,7 @@ ROB * ROB_init   ( Thread *T, int Sz ){
   R->Tail= 0;
   R->n   = 0;
   R->Size= Sz;
-  R->whenFinished= malloc (  Sz*sizeof(int) );
+  R->whenFinished= malloc (  Sz*sizeof(unsigned) );
   for (i=0; i<Sz; i++)
     R->whenFinished[i] = 0; // Instructions not in ROB always available 
   return R;
@@ -88,23 +116,6 @@ int  ROB_getPC  ( ROB *R, int Pos ) {
     Ps = (Ps == R->Size-1)? 0: Ps+1; 
   }
   return PC;
-}
-
-
-int check_dependences ( Thread *T, int PC, unsigned currentCycle ) {  
-  int s1 = T->Program[PC].source1;
-  int s2 = T->Program[PC].source2;
-  int s3 = T->Program[PC].source3;
-
-  T->whenFinished[PC]= 0;
-
-  s1 = PC+s1; if ( s1 > T->N_Instr ) s1 = s1 - T->N_Instr; 
-  s2 = PC+s2; if ( s2 > T->N_Instr ) s2 = s2 - T->N_Instr; 
-  s3 = PC+s3; if ( s3 > T->N_Instr ) s3 = s3 - T->N_Instr; 
-
-  return ( (T->whenFinished[s1] <= currentCycle) ) &&
-         ( (T->whenFinished[s2] <= currentCycle) ) &&
-         ( (T->whenFinished[s3] <= currentCycle) );
 }
 
 
@@ -146,7 +157,7 @@ int ROB_getAvail ( ROB *R, unsigned CYCLE ) {
   return Pos;
 }
 
-int ROB_setFinished ( ROB *R, int Pos, unsigned CYCLE) {
+void ROB_setFinished ( ROB *R, int Pos, unsigned CYCLE) {
   R->whenFinished[Pos]= CYCLE;
 }
 
@@ -174,6 +185,10 @@ int Processor_getLatency (Processor *P, int OpID) {
   return P->Ops[OpID].latency;
 }
 
+int Processor_getClassID (Processor *P, int OpID) {
+  return P->Ops[OpID].classID;
+}
+
 int Processor_checkResource ( Processor *P, int classID ) {
    return P->Classes[classID].available;
 }
@@ -187,20 +202,62 @@ void Processor_consumeResource ( Processor *P, int classID ) {
 ///////////// OUTPUT ///////////////////
 void output ( Processor *P, Thread *T, int PC ) {
   if (P == 0) {
-    printf("...... ");
+    printf("............. ");
     return;
   }
   int classID= Thread_getClassID ( T, PC );
   int OpID=    Thread_getOpID    ( T, PC );
-  printf("%d(%d).%s(%s)   ", PC, T->Program[PC].count, P->Classes[classID].name, P->Ops[OpID].name);
+  printf("%d.%s(%s) ", PC, P->Classes[classID].name, P->Ops[OpID].name);
 } 
 
 
 void output_thread ( Processor *P, Thread *T, int PC ) {
   if (P == 0) {
-    printf("...... ");
+    printf("..........  ");
     return;
   }
   int classID  = Thread_getClassID ( T, PC );
-  printf("%s:%d.%s   ", T->name, PC, P->Classes[classID].name);
+  printf("%s:%d.%s  ", T->name, PC, P->Classes[classID].name);
 } 
+
+////////////////// INPUT //////////////////////////
+
+Thread * Thread_dup ( Thread *Tin, char *name ) {
+  Thread *T;
+  T = (Thread *) malloc ( sizeof(Thread) );
+  T->N_Instr= Tin->N_Instr;
+  T->PC = 0;
+  T->ICount= 0;
+  T->name = name;
+  T->Program = Tin->Program;
+  return T;
+}
+
+Thread * Thread_read (char *Filename, char *ThreadName, Processor *P) {
+  Instruction *I;
+  Thread      *T;
+  FILE *F;
+  int i, N, s1, s2, s3, opID;
+
+  F= fopen(Filename, "r");
+  if (!F) return 0;
+
+  T = (Thread *) malloc ( sizeof(Thread) );
+  fscanf( F, "%d\n", &N);
+  T->N_Instr= N;
+  T->PC = 0;
+  T->ICount= 0;
+  T->name  = ThreadName;
+
+  I = (Instruction *) malloc ( N*sizeof(Instruction) );
+  T->Program = I;
+  for (i=0; i<N; i++) {
+    fscanf( F, "%d,%d,%d,%d\n", &s1, &s2, &s3, &opID);
+    I[i].source1 = s1;
+    I[i].source2 = s2;
+    I[i].source3 = s3;
+    I[i].operationID = opID;
+    I[i].classID     = Processor_getClassID (P, opID);
+  }
+  return T;
+}
