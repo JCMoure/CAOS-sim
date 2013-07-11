@@ -108,6 +108,10 @@ void ROB_retire ( ROB *R, int k, unsigned currentCycle ) {
   }
 }
 
+int  ROB_getHead( ROB *R ) {
+  return R->Head;
+}
+
 int  ROB_getPC  ( ROB *R, int Pos ) {
   int PC = Thread_getPC ( R->T );
   int Ps = R->Head;
@@ -142,7 +146,7 @@ int ROB_check ( ROB *R, int Pos, int checked, int PC, unsigned CYCLE) {
          ( s3 == Pos || R->whenFinished[s3] <= CYCLE );
 }
 
-int ROB_getAvail ( ROB *R, unsigned CYCLE ) {
+int ROB_getReady ( ROB *R, unsigned CYCLE ) {
   int Pos = R->Head;
   int PC = Thread_getPC ( R->T );
   int checked = 0;
@@ -156,6 +160,41 @@ int ROB_getAvail ( ROB *R, unsigned CYCLE ) {
     return -1;
   return Pos;
 }
+
+
+int ROB_getReady_Avail ( ROB *R, int Pinit, Processor *P, unsigned CYCLE ) {
+  int Pos = R->Head;
+  int PC = Thread_getPC ( R->T );
+  int checked = 0;
+
+  while ( checked < R->n && Pos != Pinit ) { // seek starting position
+    PC = Thread_getNext ( R->T, PC );
+    Pos= (Pos == R->Size-1)? 0: Pos+1;
+    checked++;
+  }
+
+CONTINUE:
+
+  while ( checked < R->n && !ROB_check ( R, Pos, checked, PC, CYCLE ) ) {
+    PC = Thread_getNext ( R->T, PC );
+    Pos= (Pos == R->Size-1)? 0: Pos+1;
+    checked++;
+  }
+  if ( checked == R->n)
+    return -1;
+
+  int classID = Thread_getClassID ( R->T, PC );
+  if ( Processor_checkResource ( P, classID )) {
+    Processor_consumeResource ( P, classID );
+    return Pos;
+  }
+  PC = Thread_getNext ( R->T, PC );
+  Pos= (Pos == R->Size-1)? 0: Pos+1;
+  checked++;
+  goto CONTINUE;
+}
+
+
 
 void ROB_setFinished ( ROB *R, int Pos, unsigned CYCLE) {
   R->whenFinished[Pos]= CYCLE;
@@ -176,7 +215,6 @@ void ROB_dump ( ROB *R ) {
 
 void Processor_reset (Processor *P ) {
   int i;
-  P->PIPE_avail = P->PIPE_width;
   for (i=0; i<P->Num_Classes; i++)
     P->Classes[i].available = P->Classes[i].throughput;
 }
@@ -202,22 +240,22 @@ void Processor_consumeResource ( Processor *P, int classID ) {
 ///////////// OUTPUT ///////////////////
 void output ( Processor *P, Thread *T, int PC ) {
   if (P == 0) {
-    printf("............. ");
+    printf(".............. ");
     return;
   }
   int classID= Thread_getClassID ( T, PC );
   int OpID=    Thread_getOpID    ( T, PC );
-  printf("%d.%s(%s) ", PC, P->Classes[classID].name, P->Ops[OpID].name);
+  printf("%2d.%s(%s) ", PC, P->Classes[classID].name, P->Ops[OpID].name);
 } 
 
 
 void output_thread ( Processor *P, Thread *T, int PC ) {
   if (P == 0) {
-    printf("..........  ");
+    printf("...........  ");
     return;
   }
   int classID  = Thread_getClassID ( T, PC );
-  printf("%s:%d.%s  ", T->name, PC, P->Classes[classID].name);
+  printf("%s:%2d.%s  ", T->name, PC, P->Classes[classID].name);
 } 
 
 ////////////////// INPUT //////////////////////////

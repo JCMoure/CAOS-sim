@@ -14,8 +14,6 @@ typedef struct CL {  // data structure of operation classes
 
 typedef struct PR {  // data structure for processor
   int PIPE_width;
-  int PIPE_avail;
-  int CCount;          // Counts executed cycles
   int Num_Classes;
   Class     *Classes;
   int Num_Operations;
@@ -87,6 +85,8 @@ ROB *ROB_init   ( Thread *T, int Sz );
 void ROB_insert ( ROB *R, int k ); 
 void ROB_retire ( ROB *R, int k, unsigned currentCycle );
 int  ROB_getPC  ( ROB *R, int Pos );
-int  ROB_getAvail    ( ROB *R, unsigned CYCLE );
-void ROB_setFinished ( ROB *R, int Pos, unsigned CYCLE );
+int  ROB_getHead( ROB *R );
+int  ROB_getReady       ( ROB *R, unsigned CYCLE );
+int  ROB_getReady_Avail ( ROB *R, int Pinit, Processor *P, unsigned CYCLE );
+void ROB_setFinished    ( ROB *R, int Pos, unsigned CYCLE );
 void ROB_dump   ( ROB *R );
