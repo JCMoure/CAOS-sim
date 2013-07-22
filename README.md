@@ -1,2 +1,2 @@
 Processor Simulator
-CAOS Department, Engineering Schools, UAB, Barcelona, SPAIN
+CAOS Department, Engineering School, UAB, Barcelona, SPAIN
