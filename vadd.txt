@@ -1,0 +1,9 @@
+T1 = LOAD ( i  A )    Comments after closing ) are allowed
+S  = FADD ( T1 S )    Instructions can have 0 to 3 input parameters
+T1 = LOAD ( i  B )    Maximum comment size is 120 chars
+S  = FADD ( T1 S )
+i  = IADD ( i )
+c  = ICMP ( i )
+.  = BRN  ( c )       This instruction does not generate any output ( indicated by . )
+*  
+* = Mark of End of program: don't forget
