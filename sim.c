@@ -61,9 +61,9 @@ int PIPE_check ( PIPE *PP, int PC, unsigned currentCycle ) {
 
   PP->whenFinished[PC]= 0;
 
-  s1 = PC+s1; if ( s1 > N ) s1 = s1 - N; 
-  s2 = PC+s2; if ( s2 > N ) s2 = s2 - N; 
-  s3 = PC+s3; if ( s3 > N ) s3 = s3 - N; 
+  s1 = PC+s1; if ( s1 < 0 ) s1 = s1 + N; 
+  s2 = PC+s2; if ( s2 < 0 ) s2 = s2 + N; 
+  s3 = PC+s3; if ( s3 < 0 ) s3 = s3 + N; 
 
   return ( (PP->whenFinished[s1] <= currentCycle) ) &&
          ( (PP->whenFinished[s2] <= currentCycle) ) &&
@@ -245,7 +245,7 @@ void output ( Processor *P, Thread *T, int PC ) {
   }
   int classID= Thread_getClassID ( T, PC );
   int OpID=    Thread_getOpID    ( T, PC );
-  printf("%2d.%s(%s) ", PC, P->Classes[classID].name, P->Ops[OpID].name);
+  printf("%2d.%5s(%4s) ", PC, P->Classes[classID].name, P->Ops[OpID].name);
 } 
 
 
@@ -255,7 +255,7 @@ void output_thread ( Processor *P, Thread *T, int PC ) {
     return;
   }
   int classID  = Thread_getClassID ( T, PC );
-  printf("%s:%2d.%s  ", T->name, PC, P->Classes[classID].name);
+  printf("%s:%2d.%5s  ", T->name, PC, P->Classes[classID].name);
 } 
 
 ////////////////// INPUT //////////////////////////
@@ -276,12 +276,14 @@ Thread * Thread_read (char *Filename, char *ThreadName, Processor *P) {
   Thread      *T;
   FILE *F;
   int i, N, s1, s2, s3, opID;
+  char OPERATION[8], COMMENT[121];
 
   F= fopen(Filename, "r");
   if (!F) return 0;
 
   T = (Thread *) malloc ( sizeof(Thread) );
-  fscanf( F, "%d\n", &N);
+  fscanf( F, "%d", &N);
+  fgets( COMMENT, 120, F );
   T->N_Instr= N;
   T->PC = 0;
   T->ICount= 0;
@@ -290,7 +292,13 @@ Thread * Thread_read (char *Filename, char *ThreadName, Processor *P) {
   I = (Instruction *) malloc ( N*sizeof(Instruction) );
   T->Program = I;
   for (i=0; i<N; i++) {
-    fscanf( F, "%d,%d,%d,%d\n", &s1, &s2, &s3, &opID);
+    fscanf( F, "%d,%d,%d,%s", &s1, &s2, &s3, OPERATION);
+    fgets( COMMENT, 120, F );
+    opID = 0;
+    while (opID < P->Num_Operations  &&  strcmp (OPERATION, P->Ops[opID].name))
+      opID++;
+    if (opID == P->Num_Operations)
+      return 0;
     I[i].source1 = s1;
     I[i].source2 = s2;
     I[i].source3 = s3;

@@ -4,18 +4,18 @@
 
 Class PClasses[]= 
     {
-     {" BRN ", 1, 1},
-     {" INT ", 2, 2}, 
+     {"BRN", 1, 1},
+     {"INT", 2, 2}, 
      {"FLOAT", 1, 1}, 
-     {" MEM ", 1, 1} 
+     {"MEM", 1, 1} 
     };
 
 Operation POps[]=     
     {
-     {"BRN ", 0, 1},
+     {"BRN", 0, 1},
      {"IADD", 1, 1}, {"ICMP", 1, 1}, {"IMUL", 1, 6},  {"IDIV", 1, 12},
      {"FADD", 2, 3}, {"FMUL", 2, 5}, {"FDIV", 2, 12}, {"FMOV", 2, 2},
-     {"LOAD", 3, 3}, {"STR ", 3, 2}, {"LdL2", 3, 13}, {"LRAM", 3, 113}
+     {"LOAD", 3, 3}, {"STR", 3, 2},  {"LdL2", 3, 13}, {"LRAM", 3, 113}
     };
 
 void sim_SEQUENTIAL   (int argc, char **argv, Processor *P, Thread *T, unsigned CycleCount);
@@ -43,7 +43,11 @@ void main (int argc, char **argv) {
   if (argc>1) { T0 = Thread_read (argv[1], "T0", &Proc); }
   if (argc>2) { Cycles= atoll(argv[2]); }
   if (argc>3) { option= atoll(argv[3]); }
-  else {
+  if (!T0) {
+     printf("error parsing input file!\n");
+     return;
+  }
+  if (argc<4) {
      printf("argumentos: Program Cycles Option [ other args .... ]\n");
      return;
   }
