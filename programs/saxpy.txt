@@ -1,0 +1,10 @@
+T1 = LOAD ( i  X )    Comments after closing ) are allowed
+S  = FMUL ( T1 A )    Instructions can have 0 to 3 input parameters
+T2 = LOAD ( i  Y )    Maximum comment size is 120 chars
+S  = FADD ( T2 S )
+.  = STR  ( i  Y  S ) Store instruction has 3 inputs and 0 outputs
+i  = IADD ( i )
+c  = ICMP ( i )
+.  = BRN  ( c )       This instruction does not generate any output ( indicated by . )
+*  
+* = Mark of End of program: don't forget
