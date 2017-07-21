@@ -274,7 +274,7 @@ void sim_PIPE_ROB (int argc, char **argv, Processor *P, Thread *T, unsigned Cycl
   int PC, classID, Pos, i, PIPE_avail, ROB_size=P->ROB_size, ROB_rate=P->PIPE_width;
   ROB *R;
   
-  if (argc>1) { P->PIPE_width = atoll(argv[1]); }
+  if (argc>1) { P->PIPE_width = atoll(argv[1]); ROB_rate= P->PIPE_width; }
   if (argc>2) { ROB_size = atoll(argv[2]); }
   if (argc>3) { ROB_rate = atoll(argv[3]); }
 
