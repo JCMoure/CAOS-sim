@@ -1,6 +1,0 @@
-T1 = LOAD ( i  A )    // while (1) {  T1 = A[i]
-S  = FADD ( T1 S )    //   S = T1 + S
-i  = IADD ( i 1 )     //   i = i + 1
-c  = ICMP ( i N )     //   c = i < N
-.  = BRN  ( c )       //   if (c) goto start
-*                     // }
