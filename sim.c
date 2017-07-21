@@ -1,7 +1,19 @@
 #include "sim.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
+
+#define MAX_PROGRAM_SIZE 50
+
+// Maximum of 3 input variables per operation
+  
+char  OutVar[MAX_PROGRAM_SIZE][20];
+char  Operat[MAX_PROGRAM_SIZE][20];
+char  In1Var[MAX_PROGRAM_SIZE][20];
+char  In2Var[MAX_PROGRAM_SIZE][20];
+char  In3Var[MAX_PROGRAM_SIZE][20];
+char  DUMP[121];
 
 //////////////// THREAD //////////////////7
 
@@ -236,6 +248,65 @@ void Processor_consumeResource ( Processor *P, int classID ) {
    P->Classes[classID].available--;
 }
 
+Processor * Processor_read (char *Filename) {
+  FILE *F;
+  int  i, N;
+  char NAME[8], COMMENT[121];
+
+  F= fopen(Filename, "r");
+  if (!F) return NULL;
+
+  fscanf( F, "%d", &N);
+  fgets( COMMENT, 120, F );
+
+  Processor *P = (Processor *) malloc (sizeof(Processor));
+  P->PIPE_width=N;
+
+  fscanf( F, "%d", &N);
+  fgets( COMMENT, 120, F );
+  P->ROB_size=N;
+
+  fscanf( F, "%d", &N);
+  fgets( COMMENT, 120, F );
+  P->Num_Classes= N;
+
+  Class *C;
+  C = (Class *) malloc ( N*sizeof(Class) );
+
+  P->Classes = C;
+  for (i=0; i<N; i++) {
+    int  throughput;
+    fscanf( F, "%d,%s,", &throughput, NAME);
+    fgets( COMMENT, 120, F );
+    int sz = strlen(NAME);
+    C[i].name = malloc (sz+1);
+    strcpy( C[i].name, NAME );
+    C[i].name[sz-1]=0;
+    C[i].throughput = throughput;
+    C[i].available  = throughput;
+  }
+
+  fscanf( F, "%d", &N);
+  fgets( COMMENT, 120, F );
+  P->Num_Operations= N;
+
+  Operation *Op;
+  Op = (Operation *) malloc ( N*sizeof(Operation) );
+
+  P->Ops = Op;
+  for (i=0; i<N; i++) {
+    int latency, classID;
+    fscanf( F, "%d,%d,%s,", &latency, &classID, NAME);
+    fgets( COMMENT, 120, F );
+    int sz = strlen(NAME);
+    Op[i].name = malloc (sz+1);
+    strcpy( Op[i].name, NAME );
+    Op[i].name[sz-1]=0;
+    Op[i].latency = latency;
+    Op[i].classID = classID;
+  }
+  return P;
+}
 
 ///////////// OUTPUT ///////////////////
 void output ( Processor *P, Thread *T, int PC ) {
@@ -258,6 +329,26 @@ void output_thread ( Processor *P, Thread *T, int PC ) {
   printf("%s:%2d.%5s  ", T->name, PC, P->Classes[classID].name);
 } 
 
+void Processor_dump (Processor *P) {
+  int  i, N;
+
+  printf("Width= %d, ROB size= %d\nClasses: ", P->PIPE_width, P->ROB_size);
+  N=P->Num_Classes;
+  for (i=0; i<N; i++) {
+    printf("%s(%d),",P->Classes[i].name,P->Classes[i].throughput);
+  }
+
+  printf("\nOperations: ");
+  
+  N=P->Num_Operations;
+  for (i=0; i<N; i++) {
+    printf("%s(%d),",P->Ops[i].name,P->Ops[i].latency);
+  }
+
+  printf("\n");
+}
+
+
 ////////////////// INPUT //////////////////////////
 
 Thread * Thread_dup ( Thread *Tin, char *name ) {
@@ -271,31 +362,71 @@ Thread * Thread_dup ( Thread *Tin, char *name ) {
   return T;
 }
 
+
+int findInput ( char *InputVar, int pos, int N) {
+  int i = pos, j=0;
+  do {
+    j--;
+    i = i-1;
+    if (i<0) i = N-1;
+  } while (pos != i && strcmp(InputVar, OutVar[i]) );
+  if (!strcmp(InputVar, OutVar[i]) )
+    return j;
+  return 0;
+} 
+
+
 Thread * Thread_read (char *Filename, char *ThreadName, Processor *P) {
   Instruction *I;
-  Thread      *T;
-  FILE *F;
-  int i, N, s1, s2, s3, opID;
-  char OPERATION[8], COMMENT[121];
+  Thread *T;
+  FILE   *F;
+  int    i, N, opID;
+  char   OPERATION[8], COMMENT[121];
 
   F= fopen(Filename, "r");
   if (!F) return 0;
 
+  for (i=0; i<MAX_PROGRAM_SIZE; i++)
+  {
+    fscanf ( F, "%s = %s ( %s", OutVar[i], Operat[i], In1Var[i]);
+    if (!strcmp(OutVar[i], "*")) break;  // end of file
+    if (!strcmp(In1Var[i], ")")) {
+      In1Var[i][0]='\0';
+      In2Var[i][0]='\0';
+      In3Var[i][0]='\0';
+    } else {
+      fscanf ( F, "%s", In2Var[i]);
+      if (!strcmp(In2Var[i], ")")) {
+        In2Var[i][0]='\0';
+        In3Var[i][0]='\0';
+      } else {
+        fscanf ( F, "%s", In3Var[i]);
+        if (!strcmp(In3Var[i], ")")) {
+          In3Var[i][0]='\0';
+        } else
+        fscanf ( F, ")");
+      }
+    }
+    fgets ( DUMP, 120, F);
+  }
+  N=i;
+
   T = (Thread *) malloc ( sizeof(Thread) );
-  fscanf( F, "%d", &N);
-  fgets( COMMENT, 120, F );
-  T->N_Instr= N;
-  T->PC = 0;
-  T->ICount= 0;
-  T->name  = ThreadName;
+  T->N_Instr = N;
+  T->PC      = 0;
+  T->ICount  = 0;
+  T->name    = ThreadName;
 
   I = (Instruction *) malloc ( N*sizeof(Instruction) );
   T->Program = I;
+
   for (i=0; i<N; i++) {
-    fscanf( F, "%d,%d,%d,%s", &s1, &s2, &s3, OPERATION);
-    fgets( COMMENT, 120, F );
+    int s1=0, s2=0, s3=0; 
+    if (In1Var[i]) s1 = findInput( In1Var[i], i, N);
+    if (In2Var[i]) s2 = findInput( In2Var[i], i, N);
+    if (In3Var[i]) s3 = findInput( In3Var[i], i, N);
     opID = 0;
-    while (opID < P->Num_Operations  &&  strcmp (OPERATION, P->Ops[opID].name))
+    while (opID < P->Num_Operations  &&  strcmp (Operat[i], P->Ops[opID].name))
       opID++;
     if (opID == P->Num_Operations)
       return 0;
@@ -307,3 +438,5 @@ Thread * Thread_read (char *Filename, char *ThreadName, Processor *P) {
   }
   return T;
 }
+
+

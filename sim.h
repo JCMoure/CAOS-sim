@@ -1,3 +1,7 @@
+// Defines the number of cycles at the end of the simulated execution 
+//  that are considered for visualization
+#define OUTPUT_RANGE 30
+
 ////////////////// PROCESSOR ///////////////////
 
 typedef struct OP {  // data structure of operations
@@ -14,6 +18,7 @@ typedef struct CL {  // data structure of operation classes
 
 typedef struct PR {  // data structure for processor
   int PIPE_width;
+  int ROB_size;
   int Num_Classes;
   Class     *Classes;
   int Num_Operations;
@@ -26,6 +31,8 @@ int  Processor_getClassID      ( Processor *P, int OpID );
 int  Processor_checkResource   ( Processor *P, int classID );
 void Processor_consumeResource ( Processor *P, int classID );
 
+void Processor_dump (Processor *P);
+Processor * Processor_read (char *filename);
 
 
 ////////////////// THREAD /////////////////////////

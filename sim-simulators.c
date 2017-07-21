@@ -2,64 +2,67 @@
 #include <stdio.h>
 #include <assert.h>
 
-///////////////////////////////////////////////////////////7
+///////////////////////////////////////////////////////////
 
 void sim_SEQUENTIAL (int argc, char **argv, Processor *P, Thread *T, unsigned CycleCount) {
   unsigned CYCLE = 0;
   int WAIT_CYCLE = 0;
-
+  int Display_Cycle = (CycleCount<OUTPUT_RANGE)? 0: CycleCount-OUTPUT_RANGE;
   for (; CYCLE < CycleCount; CYCLE++) { 
-    printf("%3d  ", CYCLE);
+    int display = CYCLE >= Display_Cycle;
+    if (display) printf("%3d  ", CYCLE);
     if (WAIT_CYCLE == CYCLE) {
       WAIT_CYCLE += Processor_getLatency ( P, Thread_getCurrentOpID( T ));
-      output ( P, T, Thread_getPC (T) );
+      if (display) output ( P, T, Thread_getPC (T) );
       Thread_next (T);
-    } else {
+    } else if (display) 
       output (0, 0, 0);
-    }
-    printf("\n");
+    if (display) printf("\n");
   }
-  printf ("\n\nProcessor: SEQUENTIAL execution\n");
-  printf ("CPI: %f   IPC: %f\n\n", ((float) CycleCount) / T->ICount, ((float) T->ICount) / CycleCount); 
+  printf ("\n\n*** SEQUENTIAL execution ***\n");
+  printf ("IPC: %f\n\n", ((float) T->ICount) / CycleCount); 
 }
 
 
 
-///////////////////////////////////////////////////////////7
+///////////////////////////////////////////////////////////
 
 void sim_PIPE1 (int argc, char **argv, Processor *P, Thread *T, unsigned CycleCount) {
   unsigned CYCLE = 0;
   int      PC;
   PIPE *PP= PIPE_init (T);
+  int Display_Cycle = (CycleCount<OUTPUT_RANGE)? 0: CycleCount-OUTPUT_RANGE;
 
   for (; CYCLE < CycleCount; CYCLE++) { 
-    printf("%3d  ", CYCLE);
+    int display = CYCLE >= Display_Cycle;
+    if (display) printf("%3d  ", CYCLE);
     PC = Thread_getPC (T);
     if (PIPE_check (PP, PC, CYCLE)) {
       PIPE_setFinished (PP, PC, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC )));
-      output (P, T, PC );
+      if (display) output (P, T, PC );
       Thread_next (T);
-    } else {
+    } else if (display) 
       output (0, 0, 0);
-    }
-    printf("\n");
+    if (display) printf("\n");
   }
-  printf ("\n\nProcessor: In-Order SIMPLE PIPELINE (single-issue)\n");
-  printf ("CPI: %f   IPC: %f\n\n", ((float) CycleCount) / T->ICount, ((float) T->ICount) / CycleCount); 
+  printf ("\n\n*** In-Order Single-Issue PIPELINE ***\n");
+  printf ("IPC: %f\n\n", ((float) T->ICount) / CycleCount); 
 }
 
 
 
-///////////////////////////////////////////////////////////7
+///////////////////////////////////////////////////////////
 
 void sim_THROUGHPUT (int argc, char **argv, Processor *P, Thread *T, unsigned CycleCount) {
   unsigned CYCLE = 0;
   int PC, PIPE_avail;
+  int Display_Cycle = (CycleCount<OUTPUT_RANGE)? 0: CycleCount-OUTPUT_RANGE;
 
   if (argc>1) { P->PIPE_width = atoll(argv[1]); }
 
   for (; CYCLE < CycleCount; CYCLE++) { 
-    printf("%3d  ", CYCLE);
+    int display = CYCLE >= Display_Cycle;
+    if (display) printf("%3d  ", CYCLE);
     Processor_reset( P );
     PIPE_avail= P->PIPE_width;
     while (PIPE_avail) {
@@ -67,16 +70,17 @@ void sim_THROUGHPUT (int argc, char **argv, Processor *P, Thread *T, unsigned Cy
       int classID = Thread_getClassID ( T, PC );
       if ( Processor_checkResource ( P, classID )) {
         Processor_consumeResource ( P, classID );;
-        output (P, T, PC);
+        if (display) output (P, T, PC);
         Thread_next (T);
-      } else
+      } else if (display)
         output (0, 0, 0);
       PIPE_avail--;
     }
-    printf("\n");
+    if (display) printf("\n");
   }
-  printf ("\n\nProcessor: In-Order THROUGHPUT-ONLY (No dependence control), PIPE_WIDTH= %d\n", P->PIPE_width);
-  printf ("CPI: %f   IPC: %f\n\n", ((float) CycleCount) / T->ICount, ((float) T->ICount) / CycleCount); 
+  printf ("\n\n*** In-Order THROUGHPUT (No dependence control), PIPE Width: %d ***\n",
+           P->PIPE_width);
+  printf ("IPC: %f\n\n", ((float) T->ICount) / CycleCount); 
 }
 
 
@@ -87,11 +91,13 @@ void sim_PIPELINE (int argc, char **argv, Processor *P, Thread *T, unsigned Cycl
   unsigned CYCLE = 0;
   int PC, classID, PIPE_avail;
   PIPE *PP = PIPE_init (T);
+  int Display_Cycle = (CycleCount<OUTPUT_RANGE)? 0: CycleCount-OUTPUT_RANGE;
 
   if (argc>1) { P->PIPE_width = atoll(argv[1]); }
 
   for (; CYCLE < CycleCount; CYCLE++) { 
-    printf("%3d  ", CYCLE);
+    int display = CYCLE >= Display_Cycle;
+    if (display) printf("%3d  ", CYCLE);
     Processor_reset( P );
     PIPE_avail= P->PIPE_width;
     while (PIPE_avail) {
@@ -100,20 +106,20 @@ void sim_PIPELINE (int argc, char **argv, Processor *P, Thread *T, unsigned Cycl
       if ( Processor_checkResource ( P, classID ) && PIPE_check (PP, PC, CYCLE)) {
         PIPE_setFinished (PP, PC, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC ) ));
         Processor_consumeResource ( P, classID );
-        output ( P, T, PC );
+        if (display) output ( P, T, PC );
         Thread_next (T);
-      } else
+      } else if (display)
         output (0, 0, 0);
       PIPE_avail--;
     }
-    printf("\n");
+    if (display) printf("\n");
   }
-  printf ("\n\nProcessor: In-Order PIPELINE Width= %d\n", P->PIPE_width);
-  printf ("CPI: %f   IPC: %f\n\n", ((float) CycleCount) / T->ICount, ((float) T->ICount) / CycleCount); 
+  printf ("\n\n*** In-Order %d-issue PIPELINE ***\n", P->PIPE_width);
+  printf ("IPC: %f\n\n", ((float) T->ICount) / CycleCount); 
 }
 
 
-///////////////////////////////////////////////////////////7
+///////////////////////////////////////////////////////////
 
 void sim_PIPELINE_MT2 (int argc, char **argv, Processor *P, Thread *T0, unsigned CycleCount) {
 
@@ -128,9 +134,11 @@ void sim_PIPELINE_MT2 (int argc, char **argv, Processor *P, Thread *T0, unsigned
   if (argc>2) { policy  = atoll(argv[2]); }
 
   PP = PPmain = PP0;  // Thread 0 starts with priority
+  int Display_Cycle = (CycleCount<OUTPUT_RANGE)? 0: CycleCount-OUTPUT_RANGE;
 
   for (; CYCLE < CycleCount; CYCLE++) { 
-    printf("%3d  ", CYCLE);
+    int display = CYCLE >= Display_Cycle;
+    if (display) printf("%3d  ", CYCLE);
     Processor_reset( P );
     PIPE_avail= P->PIPE_width;
     if (policy==1)        // Last thread executing gains priority
@@ -151,7 +159,7 @@ void sim_PIPELINE_MT2 (int argc, char **argv, Processor *P, Thread *T0, unsigned
       if ( Processor_checkResource ( P, classID ) && PIPE_check (PP, PC, CYCLE)) {
         PIPE_setFinished (PP, PC, CYCLE + Processor_getLatency ( P, Thread_getOpID( PP->T, PC ) ));
         Processor_consumeResource ( P, classID );
-        output_thread ( P, PP->T, PC );
+        if (display) output_thread ( P, PP->T, PC );
         Thread_next (PP->T);
         PIPE_avail--;
         NO_ISSUE = 0; // init exit condition
@@ -161,28 +169,30 @@ void sim_PIPELINE_MT2 (int argc, char **argv, Processor *P, Thread *T0, unsigned
       if (PP==PP0) PP=PP1;   // switch threads
       else         PP=PP0;
     }
-    while (PIPE_avail) {
-      output_thread (0, 0, 0);
-      PIPE_avail--;
+    if (display)
+    {
+      while (PIPE_avail) {
+        output_thread (0, 0, 0);
+        PIPE_avail--;
+      }
+      printf("\n");
     }
-    printf("\n");
   }
-  printf ("\n\nProcessor: In-Order PIPELINE(%d) x 2 H/W Threads (", P->PIPE_width);
+  printf ("\n\n*** In-Order PIPELINE(%d) x 2 H/W Threads (", P->PIPE_width);
   switch (policy) {
     case 0: printf("Thread 0 always first - then round-robin"); break;
     case 1: printf("Last thread executing always first - then round-robin"); break;
     case 2: printf("Swap first thread - then round-robin"); break;
   }
-  printf (")\n");
-  printf ("CPI: %f   IPC: %f  T0-ICount: %d  T1-ICount: %d\n\n", 
-             ((float) CycleCount) / (T0->ICount+T1->ICount),
+  printf (") ***\n");
+  printf ("IPC: %f  T0-ICount: %d  T1-ICount: %d\n\n", 
              ((float) T0->ICount + T1->ICount) / CycleCount,
              T0->ICount, T1->ICount); 
 }
 
 
 
-///////////////////////////////////////////////////////////7
+///////////////////////////////////////////////////////////
 
 void sim_PIPELINE_MT4 (int argc, char **argv, Processor *P, Thread *T0, unsigned CycleCount) 
 {
@@ -202,8 +212,10 @@ void sim_PIPELINE_MT4 (int argc, char **argv, Processor *P, Thread *T0, unsigned
   if (argc>1) { P->PIPE_width = atoll(argv[1]); }
   if (argc>2) { seed  = atoll(argv[2]); }
   srand(seed);
+  int Display_Cycle = (CycleCount<OUTPUT_RANGE)? 0: CycleCount-OUTPUT_RANGE;
   for (; CYCLE < CycleCount; CYCLE++) { 
-    printf("%3d  ", CYCLE);
+    int display = CYCLE >= Display_Cycle;
+    if (display) printf("%3d  ", CYCLE);
     Processor_reset( P );
     PIPE_avail= P->PIPE_width;
     // round-robin priority: do nothing
@@ -222,7 +234,7 @@ void sim_PIPELINE_MT4 (int argc, char **argv, Processor *P, Thread *T0, unsigned
       if ( Processor_checkResource ( P, classID ) && PIPE_check (PP, PC, CYCLE)) {
         PIPE_setFinished (PP, PC, CYCLE + Processor_getLatency ( P, Thread_getOpID( PP->T, PC ) ));
         Processor_consumeResource ( P, classID );
-        output_thread ( P, PP->T, PC );
+        if (display) output_thread ( P, PP->T, PC );
         Thread_next (PP->T);
         PIPE_avail--;
         NO_ISSUE = 0; // init exit condition
@@ -238,64 +250,28 @@ void sim_PIPELINE_MT4 (int argc, char **argv, Processor *P, Thread *T0, unsigned
         case 3: PP=PP3; break;
       }
     }
-    while (PIPE_avail) {
-      output_thread (0, 0, 0);
-      PIPE_avail--;
-    }
-    printf("\n");
+    if (display)
+    {
+      while (PIPE_avail) {
+        output_thread (0, 0, 0);
+        PIPE_avail--;
+      }
+      printf("\n");
+    } 
   }
-  printf ("\n\nProcessor: In-Order PIPELINE(%d) x 4 H/W Threads (random policy each cycle, then round-robin)\n", 
+  printf ("\n\n*** In-Order PIPELINE(%d) x 4 H/W Threads (random policy each cycle, then round-robin) ***\n", 
           P->PIPE_width);
-  printf ("CPI: %f   IPC: %f  T0: %d  T1: %d  T2: %d  T3: %d\n\n", 
-              ((float) CycleCount) / (T0->ICount+T1->ICount+T2->ICount+T3->ICount),
+  printf ("IPC: %f  T0: %d  T1: %d  T2: %d  T3: %d\n\n", 
               ((float) T0->ICount+T1->ICount+T2->ICount+T3->ICount) / CycleCount,
               T0->ICount, T1->ICount, T2->ICount, T3->ICount); 
 }
 
 
-///////////////////////////////////////////////////////////7
+///////////////////////// ROB + Full Pipeline ///////////
 
 void sim_PIPE_ROB (int argc, char **argv, Processor *P, Thread *T, unsigned CycleCount) {
   unsigned CYCLE = 0;
-  int PC, Pos, i, ROB_size=8, ROB_rate=1;
-  ROB *R;
-  
-  if (argc>1) { ROB_size = atoll(argv[1]); }
-  if (argc>2) { ROB_rate = atoll(argv[2]); }
-
-  R = ROB_init ( T, ROB_size);
-
-  for (; CYCLE < CycleCount; CYCLE++) { 
-    printf("%3d  ", CYCLE);
-    ROB_retire ( R, ROB_rate, CYCLE);  // ROB retire width
-    ROB_insert ( R, ROB_rate);         // ROB insert width
-    for (i=0; i<ROB_rate; i++) {
-      if ( (Pos = ROB_getReady ( R, CYCLE )) >= 0 ) {
-        PC = ROB_getPC (R, Pos);
-        output ( P, T, PC );
-        ROB_setFinished ( R, Pos, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC )));
-      }
-      else {
-        output ( 0, 0, 0 );
-      }
-    }
-#ifdef DEBUG
-    ROB_dump ( R );
-#endif
-    printf("\n");
-  }
-  printf("\n\nPROCESSOR: Dynamic Execution Reordering, Full PIPE, ROB size: %d, Issue/Retire rate: %d\n", 
-         ROB_size, ROB_rate);
-  printf ("CPI: %f   IPC: %f\n\n", ((float) CycleCount) / T->ICount, ((float) T->ICount) / CycleCount); 
-}
-
-
-
-///////////////////////// ROB + Full Pipeline ///////////
-
-void sim_PIPE_ROB_thr (int argc, char **argv, Processor *P, Thread *T, unsigned CycleCount) {
-  unsigned CYCLE = 0;
-  int PC, classID, Pos, i, PIPE_avail, ROB_size=8, ROB_rate=1;
+  int PC, classID, Pos, i, PIPE_avail, ROB_size=P->ROB_size, ROB_rate=P->PIPE_width;
   ROB *R;
   
   if (argc>1) { P->PIPE_width = atoll(argv[1]); }
@@ -303,9 +279,11 @@ void sim_PIPE_ROB_thr (int argc, char **argv, Processor *P, Thread *T, unsigned 
   if (argc>3) { ROB_rate = atoll(argv[3]); }
 
   R = ROB_init ( T, ROB_size);
+  int Display_Cycle = (CycleCount<OUTPUT_RANGE)? 0: CycleCount-OUTPUT_RANGE;
 
   for (; CYCLE < CycleCount; CYCLE++) { 
-    printf("%3d  ", CYCLE);
+    int display = CYCLE >= Display_Cycle;
+    if (display) printf("%3d  ", CYCLE);
     ROB_retire ( R, ROB_rate, CYCLE);  // ROB retire width
     ROB_insert ( R, ROB_rate);         // ROB insert width
     Processor_reset( P );
@@ -314,19 +292,20 @@ void sim_PIPE_ROB_thr (int argc, char **argv, Processor *P, Thread *T, unsigned 
 
     while (PIPE_avail && (Pos = ROB_getReady_Avail ( R, Pos, P, CYCLE )) >= 0 ) {
       PC = ROB_getPC (R, Pos);
-      output ( P, T, PC );
+      if (display) output ( P, T, PC );
       ROB_setFinished ( R, Pos, CYCLE + Processor_getLatency ( P, Thread_getOpID( T, PC )));
       PIPE_avail--;
     }
-    for (i=0; i<PIPE_avail; i++)
-      output ( 0, 0, 0 );
+    if (display)
+      for (i=0; i<PIPE_avail; i++)
+        output (0, 0, 0);
 #ifdef DEBUG
     ROB_dump ( R );
 #endif
-    printf("\n");
+    if (display) printf("\n");
   }
-  printf("\n\nPROCESSOR: Dynamic Execution Reordering, Full PIPE(%d), ROB size: %d, Issue/Retire rate: %d\n", 
+  printf("\n\n*** Dynamic Execution Reordering, PIPE(%d), ROB size: %d, Issue/Retire rate: %d ***\n", 
          P->PIPE_width, ROB_size, ROB_rate);
-  printf ("CPI: %f   IPC: %f\n\n", ((float) CycleCount) / T->ICount, ((float) T->ICount) / CycleCount); 
+  printf ("IPC: %f\n\n", ((float) T->ICount) / CycleCount); 
 }
 
