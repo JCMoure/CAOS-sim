@@ -124,7 +124,7 @@ void sim_PIPELINE (int argc, char **argv, Processor *P, Thread *T, unsigned Cycl
 void sim_PIPELINE_MT2 (int argc, char **argv, Processor *P, Thread *T0, unsigned CycleCount) {
 
   unsigned CYCLE = 0;
-  int   NO_ISSUE=0, PC, classID, policy=0, PIPE_avail;
+  int   NO_ISSUE=0, PC, classID, policy=2, PIPE_avail;
   Thread * T1= Thread_dup (T0, "T1");
   PIPE *PP0 = PIPE_init (T0);
   PIPE *PP1 = PIPE_init (T1);
